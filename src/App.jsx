@@ -4,41 +4,59 @@ import UploadBox from "./components/UploadBox.jsx";
 import ProgressBar from "./components/ProgressBar.jsx";
 import ResultCard from "./components/ResultCard.jsx";
 
-// --- FRONTEND-ONLY MOCK: create a tiny valid PDF blob ---
-function makeFakePdfBlob({ winner = "Team A", loser = "Team B" } = {}) {
-    // Minimal PDF content; renders as a valid 1-page PDF with a simple title text.
-    const pdfText = `%PDF-1.4
-1 0 obj <<>> endobj
-2 0 obj << /Type /Catalog /Pages 3 0 R >> endobj
-3 0 obj << /Type /Pages /Kids [4 0 R] /Count 1 >> endobj
-4 0 obj << /Type /Page /Parent 3 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 6 0 R >> >> >> endobj
-5 0 obj << /Length 152 >> stream
-BT
-/F1 18 Tf
-72 720 Td
-(Head-to-Head Infographic - MOCK) Tj
-0 -28 Td
-(Winner: ${winner}) Tj
-0 -22 Td
-(Loser: ${loser}) Tj
-ET
-endstream
-endobj
-6 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
-xref
-0 7
-0000000000 65535 f 
-0000000010 00000 n 
-0000000052 00000 n 
-0000000101 00000 n 
-0000000155 00000 n 
-0000000320 00000 n 
-0000000532 00000 n 
-trailer << /Size 7 /Root 2 0 R >>
-startxref
-650
-%%EOF`;
-    return new Blob([pdfText], { type: "application/pdf" });
+/**
+ * Extract HTML from the "text" field(s) of a FluxPrompt JSON response.
+ * The API commonly returns an array at data.message[], each item may have a "text" string.
+ * That string may contain a fenced code block ```html ... ```, or plain HTML.
+ */
+function extractHtmlFromApiResponse(obj) {
+    // Gather candidate text fields (handle both array and single object/string)
+    const messages =
+        obj?.data?.message ??
+        obj?.message ??
+        obj?.output?.message ??
+        obj?.data?.output?.message ??
+        [];
+
+    const texts = Array.isArray(messages)
+        ? messages
+            .map((m) => (typeof m?.text === "string" ? m.text : m))
+            .filter((t) => typeof t === "string")
+        : typeof messages === "string"
+            ? [messages]
+            : [];
+
+    // Try each candidate text
+    for (const t of texts) {
+        // 1) Prefer fenced HTML block: ```html ... ```
+        const fence = /```html\s*([\s\S]*?)\s*```/i.exec(t);
+        if (fence?.[1]) return fence[1].trim();
+
+        // 2) Any fenced block that looks like HTML
+        const anyFence = /```([\s\S]*?)```/i.exec(t);
+        if (anyFence?.[1] && /<\s*html[\s>]/i.test(anyFence[1])) {
+            return anyFence[1].trim();
+        }
+
+        // 3) Raw HTML in the text
+        if (/<\s*html[\s>]/i.test(t)) return t.trim();
+    }
+
+    // Fallbacks: sometimes providers place HTML directly on output fields
+    const candidates = [
+        obj?.output?.html,
+        obj?.data?.output?.html,
+        obj?.output,
+        obj?.data?.output,
+    ].filter((v) => typeof v === "string");
+
+    for (const c of candidates) {
+        if (/<\s*html[\s>]/i.test(c)) return c.trim();
+        const fence = /```html\s*([\s\S]*?)\s*```/i.exec(c);
+        if (fence?.[1]) return fence[1].trim();
+    }
+
+    return null;
 }
 
 export default function App() {
@@ -46,7 +64,7 @@ export default function App() {
     const [rawHtml, setRawHtml] = useState("");
     const [busy, setBusy] = useState(false);
     const [progress, setProgress] = useState(0);
-    const [pdfBlob, setPdfBlob] = useState(null);
+    const [resultBlob, setResultBlob] = useState(null);
     const [error, setError] = useState("");
 
     const reset = () => {
@@ -54,11 +72,11 @@ export default function App() {
         setRawHtml("");
         setBusy(false);
         setProgress(0);
-        setPdfBlob(null);
+        setResultBlob(null);
         setError("");
     };
 
-    // Fake progress while "converting"
+    // Visual progress while calling the API (UX only)
     const simulateProgress = () => {
         setProgress(10);
         let v = 10;
@@ -74,35 +92,58 @@ export default function App() {
             setError("Please upload an HTML file or paste raw HTML.");
             return;
         }
+
         setBusy(true);
         setError("");
         const stop = simulateProgress();
 
         try {
-            // --- FRONTEND-ONLY MOCK: parse minimal info from HTML to show a winner label ---
-            let winner = "Competitor A";
-            let loser = "Competitor B";
+            // Obtain the HTML source from either the uploaded file or the text area
+            const inputText = file ? await file.text() : rawHtml;
 
-            // Best-effort: try to infer names from <title> or simple markers in the provided HTML.
-            const source = file ? await file.text() : rawHtml;
-            const titleMatch = source.match(/<title[^>]*>([^<]+)<\/title>/i);
-            if (titleMatch?.[1]) {
-                const parts = titleMatch[1].split(/vs\.?|x|v\.?/i).map(s => s.trim()).filter(Boolean);
-                if (parts.length >= 2) {
-                    winner = parts[0];
-                    loser = parts[1];
-                }
+            // Call your local proxy which forwards to FluxPrompt
+            const resp = await fetch("/api/fluxprompt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ inputText })
+            });
+
+            const text = await resp.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                data = { raw: text };
             }
 
-            // Pretend we did real work…
-            await new Promise(r => setTimeout(r, 900));
+            if (!resp.ok) {
+                const msg =
+                    data?.error ||
+                    data?.message ||
+                    `Request failed with ${resp.status}`;
+                throw new Error(
+                    `${msg}${data?.details ? `\n\nDetails: ${JSON.stringify(data.details, null, 2)}` : ""}`
+                );
+            }
 
-            // Produce a fake but valid PDF so the download works now.
-            const blob = makeFakePdfBlob({ winner, loser });
+            // ✅ Extract HTML specifically from the "text" field in the returned JSON
+            const outputHtml = extractHtmlFromApiResponse(data);
+            if (!outputHtml) {
+                // If no HTML found, store the JSON for inspection
+                const fallback = new Blob([JSON.stringify(data, null, 2)], {
+                    type: "application/json;charset=utf-8"
+                });
+                setProgress(100);
+                setResultBlob(fallback);
+                return;
+            }
+
+            // Create a downloadable HTML blob
+            const blob = new Blob([outputHtml], { type: "text/html;charset=utf-8" });
             setProgress(100);
-            setPdfBlob(blob);
-        } catch {
-            setError("Something went wrong during mock conversion.");
+            setResultBlob(blob);
+        } catch (e) {
+            setError(e?.message || "Something went wrong while calling the API.");
         } finally {
             stop();
             setBusy(false);
@@ -110,11 +151,14 @@ export default function App() {
     };
 
     const handleDownload = () => {
-        if (!pdfBlob) return;
-        const url = URL.createObjectURL(pdfBlob);
+        if (!resultBlob) return;
+        const url = URL.createObjectURL(resultBlob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "head-to-head-infographic.pdf";
+        a.download =
+            resultBlob.type?.startsWith("text/html")
+                ? "head-to-head-infographic.html"
+                : "fluxprompt-response.json";
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -127,7 +171,7 @@ export default function App() {
 
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="sub">
-                    Upload a head‑to‑head HTML file or paste raw HTML.
+                    Paste/upload HTML to send to the agent. The returned JSON’s <code>data.message[].text</code> will be scanned for a <code>```html</code> block or raw HTML and downloaded.
                 </div>
             </div>
 
@@ -137,12 +181,18 @@ export default function App() {
                     <div className="hint">Selected: {file ? file.name : "none"}</div>
 
                     <div style={{ marginTop: 14 }}>
-                        <label htmlFor="rawhtml"><strong>Or paste raw HTML</strong></label>
+                        <label htmlFor="rawhtml">
+                            <strong>Or paste raw HTML</strong>
+                        </label>
                         <textarea
                             id="rawhtml"
                             className="input"
-                            style={{ height: 160, marginTop: 8, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas" }}
-                            placeholder="&lt;html&gt;...&lt;/html&gt;"
+                            style={{
+                                height: 160,
+                                marginTop: 8,
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"
+                            }}
+                            placeholder="<html>...</html>"
                             value={rawHtml}
                             onChange={(e) => setRawHtml(e.target.value)}
                             disabled={busy}
@@ -163,7 +213,7 @@ export default function App() {
                             onClick={handleConvert}
                             disabled={busy || (!file && !rawHtml)}
                         >
-                            {busy ? "Converting..." : "Convert to PDF"}
+                            {busy ? "Processing..." : "Convert to PDF"}
                         </button>
                     </div>
 
@@ -173,7 +223,7 @@ export default function App() {
                         <div style={{ marginTop: 16 }}>
                             <ProgressBar value={progress} />
                             <div className="hint" aria-live="polite" style={{ marginTop: 6 }}>
-                                Processing (mock)…
+                                Processing…
                             </div>
                         </div>
                     )}
@@ -183,11 +233,15 @@ export default function App() {
                     <div style={{ marginBottom: 8 }}>
                         <strong>Result</strong>
                     </div>
-                    {!pdfBlob && <div className="hint">Your PDF will appear here when ready.</div>}
-                    {pdfBlob && (
+                    {!resultBlob && <div className="hint">Your file will appear here when ready.</div>}
+                    {resultBlob && (
                         <ResultCard
-                            fileName="head-to-head-infographic.pdf"
-                            size={pdfBlob.size}
+                            fileName={
+                                resultBlob.type?.startsWith("text/html")
+                                    ? "head-to-head-infographic.html"
+                                    : "fluxprompt-response.json"
+                            }
+                            size={resultBlob.size}
                             onDownload={handleDownload}
                             onReset={reset}
                         />
