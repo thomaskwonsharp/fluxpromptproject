@@ -1,28 +1,39 @@
+/* ===============================
+   Sharp Enterprise – Light Theme
+   =============================== */
+
 :root {
-    --bg: #0b0f14;
-    --card: #111827;
-    --muted: #64748b;
-    --text: #e5e7eb;
-    --accent: #60a5fa;
-    --accent-2: #34d399;
-    --danger: #ef4444;
-    --border: #1f2937;
+    --bg: #ffffff;
+    --card: #f9fafb;
+    --muted: #6b7280;
+    --text: #111827;
+    /* Sharp red */
+    --accent: #e60012;
+    --accent-2: #ff4d4f;
+    --danger: #e60012;
+    --border: #e5e7eb;
 }
 
 * {
     box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
     height: 100%;
 }
 
 body {
     margin: 0;
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
-    background: linear-gradient(180deg, #0b0f14 0%, #0c1220 100%);
+    background: radial-gradient(1200px 800px at 30% -10%, rgba(0,0,0,0.04), transparent 60%), radial-gradient(1000px 700px at 90% 20%, rgba(0,0,0,0.03), transparent 60%), var(--bg);
     color: var(--text);
 }
+
+/* ===============================
+   Layout
+   =============================== */
 
 .container {
     max-width: 880px;
@@ -38,32 +49,48 @@ body {
     margin-bottom: 22px;
 }
 
+/* ===============================
+   UI Elements
+   =============================== */
+
 .badge {
     font-size: 12px;
     padding: 4px 8px;
-    background: #0d1b2a;
+    background: #f3f4f6;
     border: 1px solid var(--border);
     color: var(--muted);
     border-radius: 8px;
 }
 
 .card {
-    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 20px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.08);
 }
 
 h1 {
     font-size: 22px;
     margin: 0;
+    color: #111827; /* dark charcoal */
 }
 
 .sub {
     color: var(--muted);
     font-size: 14px;
 }
+
+.logo {
+    height: 28px; /* enterprise-appropriate size */
+    width: auto;
+    display: block;
+}
+
+
+/* ===============================
+   Grid
+   =============================== */
 
 .row {
     display: grid;
@@ -77,16 +104,24 @@ h1 {
     }
 }
 
+/* ===============================
+   Upload
+   =============================== */
+
 .upload {
-    border: 1px dashed #243045;
+    border: 1px dashed #d1d5db;
     border-radius: 14px;
     padding: 16px;
-    background: #0a1220;
+    background: #ffffff;
 }
 
     .upload:hover {
-        border-color: #35507a;
+        border-color: var(--accent);
     }
+
+/* ===============================
+   Controls / Buttons
+   =============================== */
 
 .controls {
     display: flex;
@@ -99,14 +134,15 @@ h1 {
     padding: 10px 14px;
     border-radius: 10px;
     border: 1px solid var(--border);
-    background: #0f172a;
+    background: #ffffff;
     color: var(--text);
     cursor: pointer;
 }
 
     .btn.primary {
-        background: linear-gradient(135deg, #2563eb, #0ea5e9);
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
         border: none;
+        color: #ffffff;
     }
 
     .btn.ghost {
@@ -118,19 +154,27 @@ h1 {
         cursor: not-allowed;
     }
 
+/* ===============================
+   Inputs
+   =============================== */
+
 .input {
     width: 100%;
     padding: 10px 12px;
     border-radius: 10px;
     border: 1px solid var(--border);
-    background: #0a1120;
+    background: #ffffff;
     color: var(--text);
 }
+
+/* ===============================
+   Progress Bar
+   =============================== */
 
 .progress {
     height: 8px;
     border-radius: 999px;
-    background: #0a1220;
+    background: #e5e7eb;
     border: 1px solid var(--border);
     overflow: hidden;
 }
@@ -143,6 +187,10 @@ h1 {
         transition: width 220ms ease;
     }
 
+/* ===============================
+   Result Card
+   =============================== */
+
 .result {
     display: flex;
     align-items: center;
@@ -151,7 +199,7 @@ h1 {
     padding: 12px 14px;
     border: 1px solid var(--border);
     border-radius: 12px;
-    background: #0b1424;
+    background: #ffffff;
 }
 
 .meta {
@@ -170,3 +218,5 @@ h1 {
     font-size: 12px;
     margin-top: 6px;
 }
+
+``

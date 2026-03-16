@@ -3,60 +3,42 @@ import "./styles.css";
 import UploadBox from "./components/UploadBox.jsx";
 import ProgressBar from "./components/ProgressBar.jsx";
 import ResultCard from "./components/ResultCard.jsx";
+import sharpLogo from "./assets/sharp-logo.svg"; // Sharp logo image
 
-/**
- * Extract HTML from the "text" field(s) of a FluxPrompt JSON response.
- * The API commonly returns an array at data.message[], each item may have a "text" string.
- * That string may contain a fenced code block ```html ... ```, or plain HTML.
- */
-function extractHtmlFromApiResponse(obj) {
-    // Gather candidate text fields (handle both array and single object/string)
-    const messages =
-        obj?.data?.message ??
-        obj?.message ??
-        obj?.output?.message ??
-        obj?.data?.output?.message ??
-        [];
-
-    const texts = Array.isArray(messages)
-        ? messages
-            .map((m) => (typeof m?.text === "string" ? m.text : m))
-            .filter((t) => typeof t === "string")
-        : typeof messages === "string"
-            ? [messages]
-            : [];
-
-    // Try each candidate text
-    for (const t of texts) {
-        // 1) Prefer fenced HTML block: ```html ... ```
-        const fence = /```html\s*([\s\S]*?)\s*```/i.exec(t);
-        if (fence?.[1]) return fence[1].trim();
-
-        // 2) Any fenced block that looks like HTML
-        const anyFence = /```([\s\S]*?)```/i.exec(t);
-        if (anyFence?.[1] && /<\s*html[\s>]/i.test(anyFence[1])) {
-            return anyFence[1].trim();
-        }
-
-        // 3) Raw HTML in the text
-        if (/<\s*html[\s>]/i.test(t)) return t.trim();
-    }
-
-    // Fallbacks: sometimes providers place HTML directly on output fields
-    const candidates = [
-        obj?.output?.html,
-        obj?.data?.output?.html,
-        obj?.output,
-        obj?.data?.output,
-    ].filter((v) => typeof v === "string");
-
-    for (const c of candidates) {
-        if (/<\s*html[\s>]/i.test(c)) return c.trim();
-        const fence = /```html\s*([\s\S]*?)\s*```/i.exec(c);
-        if (fence?.[1]) return fence[1].trim();
-    }
-
-    return null;
+// --- FRONTEND-ONLY MOCK: create a tiny valid PDF blob ---
+function makeFakePdfBlob({ winner = "Team A", loser = "Team B" } = {}) {
+    const pdfText = `%PDF-1.4
+1 0 obj <<>> endobj
+2 0 obj << /Type /Catalog /Pages 3 0 R >> endobj
+3 0 obj << /Type /Pages /Kids [4 0 R] /Count 1 >> endobj
+4 0 obj << /Type /Page /Parent 3 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 6 0 R >> >> >> endobj
+5 0 obj << /Length 152 >> stream
+BT
+/F1 18 Tf
+72 720 Td
+(Head-to-Head Infographic - MOCK) Tj
+0 -28 Td
+(Winner: ${winner}) Tj
+0 -22 Td
+(Loser: ${loser}) Tj
+ET
+endstream
+endobj
+6 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj
+xref
+0 7
+0000000000 65535 f 
+0000000010 00000 n 
+0000000052 00000 n 
+0000000101 00000 n 
+0000000155 00000 n 
+0000000320 00000 n 
+0000000532 00000 n 
+trailer << /Size 7 /Root 2 0 R >>
+startxref
+650
+%%EOF`;
+    return new Blob([pdfText], { type: "application/pdf" });
 }
 
 export default function App() {
@@ -64,7 +46,7 @@ export default function App() {
     const [rawHtml, setRawHtml] = useState("");
     const [busy, setBusy] = useState(false);
     const [progress, setProgress] = useState(0);
-    const [resultBlob, setResultBlob] = useState(null);
+    const [pdfBlob, setPdfBlob] = useState(null);
     const [error, setError] = useState("");
 
     const reset = () => {
@@ -72,11 +54,10 @@ export default function App() {
         setRawHtml("");
         setBusy(false);
         setProgress(0);
-        setResultBlob(null);
+        setPdfBlob(null);
         setError("");
     };
 
-    // Visual progress while calling the API (UX only)
     const simulateProgress = () => {
         setProgress(10);
         let v = 10;
@@ -92,58 +73,34 @@ export default function App() {
             setError("Please upload an HTML file or paste raw HTML.");
             return;
         }
-
         setBusy(true);
         setError("");
         const stop = simulateProgress();
 
         try {
-            // Obtain the HTML source from either the uploaded file or the text area
-            const inputText = file ? await file.text() : rawHtml;
+            let winner = "Competitor A";
+            let loser = "Competitor B";
 
-            // Call your local proxy which forwards to FluxPrompt
-            const resp = await fetch("/api/fluxprompt", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ inputText })
-            });
-
-            const text = await resp.text();
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch {
-                data = { raw: text };
+            const source = file ? await file.text() : rawHtml;
+            const titleMatch = source.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch?.[1]) {
+                const parts = titleMatch[1]
+                    .split(/vs\.?|x|v\.?/i)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                if (parts.length >= 2) {
+                    winner = parts[0];
+                    loser = parts[1];
+                }
             }
 
-            if (!resp.ok) {
-                const msg =
-                    data?.error ||
-                    data?.message ||
-                    `Request failed with ${resp.status}`;
-                throw new Error(
-                    `${msg}${data?.details ? `\n\nDetails: ${JSON.stringify(data.details, null, 2)}` : ""}`
-                );
-            }
+            await new Promise((r) => setTimeout(r, 900));
 
-            // ✅ Extract HTML specifically from the "text" field in the returned JSON
-            const outputHtml = extractHtmlFromApiResponse(data);
-            if (!outputHtml) {
-                // If no HTML found, store the JSON for inspection
-                const fallback = new Blob([JSON.stringify(data, null, 2)], {
-                    type: "application/json;charset=utf-8"
-                });
-                setProgress(100);
-                setResultBlob(fallback);
-                return;
-            }
-
-            // Create a downloadable HTML blob
-            const blob = new Blob([outputHtml], { type: "text/html;charset=utf-8" });
+            const blob = makeFakePdfBlob({ winner, loser });
             setProgress(100);
-            setResultBlob(blob);
-        } catch (e) {
-            setError(e?.message || "Something went wrong while calling the API.");
+            setPdfBlob(blob);
+        } catch {
+            setError("Something went wrong during mock conversion.");
         } finally {
             stop();
             setBusy(false);
@@ -151,14 +108,11 @@ export default function App() {
     };
 
     const handleDownload = () => {
-        if (!resultBlob) return;
-        const url = URL.createObjectURL(resultBlob);
+        if (!pdfBlob) return;
+        const url = URL.createObjectURL(pdfBlob);
         const a = document.createElement("a");
         a.href = url;
-        a.download =
-            resultBlob.type?.startsWith("text/html")
-                ? "head-to-head-infographic.html"
-                : "fluxprompt-response.json";
+        a.download = "head-to-head-infographic.pdf";
         a.click();
         URL.revokeObjectURL(url);
     };
@@ -166,13 +120,16 @@ export default function App() {
     return (
         <div className="container">
             <div className="header">
-                <h1>Head‑to‑Head → 1‑Page Infographic</h1>
+                {/* Logo + Title row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {/* you already have .logo in styles.css */}
+                    <img src={sharpLogo} alt="Sharp logo" className="logo" />
+                    <h1>Head‑to‑Head → 1‑Page Infographic</h1>
+                </div>
             </div>
 
             <div className="card" style={{ marginBottom: 16 }}>
-                <div className="sub">
-                    Paste/upload HTML to send to the agent. The returned JSON’s <code>data.message[].text</code> will be scanned for a <code>```html</code> block or raw HTML and downloaded.
-                </div>
+                <div className="sub">Upload a head‑to‑head HTML file or paste raw HTML.</div>
             </div>
 
             <div className="row">
@@ -190,7 +147,7 @@ export default function App() {
                             style={{
                                 height: 160,
                                 marginTop: 8,
-                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas",
                             }}
                             placeholder="<html>...</html>"
                             value={rawHtml}
@@ -200,20 +157,12 @@ export default function App() {
                     </div>
 
                     <div className="controls">
-                        <button
-                            className="btn ghost"
-                            onClick={reset}
-                            disabled={busy || (!file && !rawHtml)}
-                        >
+                        <button className="btn ghost" onClick={reset} disabled={busy || (!file && !rawHtml)}>
                             Clear
                         </button>
 
-                        <button
-                            className="btn primary"
-                            onClick={handleConvert}
-                            disabled={busy || (!file && !rawHtml)}
-                        >
-                            {busy ? "Processing..." : "Convert to PDF"}
+                        <button className="btn primary" onClick={handleConvert} disabled={busy || (!file && !rawHtml)}>
+                            {busy ? "Converting..." : "Convert to PDF"}
                         </button>
                     </div>
 
@@ -223,7 +172,7 @@ export default function App() {
                         <div style={{ marginTop: 16 }}>
                             <ProgressBar value={progress} />
                             <div className="hint" aria-live="polite" style={{ marginTop: 6 }}>
-                                Processing…
+                                Processing (mock)…
                             </div>
                         </div>
                     )}
@@ -233,15 +182,11 @@ export default function App() {
                     <div style={{ marginBottom: 8 }}>
                         <strong>Result</strong>
                     </div>
-                    {!resultBlob && <div className="hint">Your file will appear here when ready.</div>}
-                    {resultBlob && (
+                    {!pdfBlob && <div className="hint">Your PDF will appear here when ready.</div>}
+                    {pdfBlob && (
                         <ResultCard
-                            fileName={
-                                resultBlob.type?.startsWith("text/html")
-                                    ? "head-to-head-infographic.html"
-                                    : "fluxprompt-response.json"
-                            }
-                            size={resultBlob.size}
+                            fileName="head-to-head-infographic.pdf"
+                            size={pdfBlob.size}
                             onDownload={handleDownload}
                             onReset={reset}
                         />
