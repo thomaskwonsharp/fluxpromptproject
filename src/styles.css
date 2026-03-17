@@ -167,10 +167,16 @@ h1 {
     color: var(--text);
 }
 
+textarea {
+    resize: vertical;
+    width: 100%;
+    max-width: 100%;
+}
+
+``
 /* ===============================
    Progress Bar
    =============================== */
-
 .progress {
     height: 8px;
     border-radius: 999px;

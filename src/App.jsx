@@ -165,9 +165,7 @@ export default function App() {
 
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="sub">
-                    Paste/upload HTML to send to the agent. The returned JSON’s{" "}
-                    <code>data.message[].text</code> will be scanned for{" "}
-                    <code>```html</code> or raw HTML and downloaded.
+                    Paste/upload HTML
                 </div>
             </div>
 
