@@ -3,6 +3,7 @@ import "./styles.css";
 import UploadBox from "./components/UploadBox.jsx";
 import ProgressBar from "./components/ProgressBar.jsx";
 import ResultCard from "./components/ResultCard.jsx";
+import sharpLogo from "./assets/sharplogo.svg";
 
 /**
  * Extract HTML from the "text" field(s) of a FluxPrompt JSON response.
@@ -159,9 +160,16 @@ export default function App() {
 
     return (
         <div className="container">
+
             <div className="header">
+                <img
+                    src={sharpLogo}
+                    alt="Sharp logo"
+                    className="logo"
+                />
                 <h1>Head‑to‑Head → 1‑Page Infographic</h1>
             </div>
+
 
             <div className="card" style={{ marginBottom: 16 }}>
                 <div className="sub">
